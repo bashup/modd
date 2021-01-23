@@ -8,9 +8,13 @@ package conf
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
+
+const confVarName = "@confdir"
 
 type parser struct {
 	name   string
@@ -21,7 +25,7 @@ type parser struct {
 	peekItem *item
 }
 
-// Dreadfully naive at the momet, but then so is the lexer.
+// Dreadfully naive at the moment, but then so is the lexer.
 func unquote(s string) string {
 	quote := s[0:1]
 	s = s[1 : len(s)-1]
@@ -159,6 +163,12 @@ func (p *parser) parse() (err error) {
 	defer p.recover(&err)
 	p.lex = lex(p.name, p.text)
 	p.config = &Config{}
+
+	// Store path to conf in variable if not empty
+	if p.name != "" {
+		p.config.addVariable(confVarName, path.Dir(p.name))
+	}
+
 	for {
 		for {
 			var k, v string
@@ -233,6 +243,14 @@ Loop:
 			dir := prepValue(p.mustNext(itemBareString, itemQuotedString))
 			if block.InDir != "" {
 				p.errorf("indir can only be used once per block")
+			}
+			// Replace @confdir here instead of at command runtime
+			dir = strings.Replace(
+				dir, confVarName, p.config.variables[confVarName], -1,
+			)
+			dir, err := filepath.Abs(dir)
+			if err != nil {
+				p.errorf("%s", err)
 			}
 			block.InDir = dir
 		case itemDaemon:
